@@ -60,6 +60,9 @@ boolean invert = false;
 
 boolean connectEnds = false;
 
+boolean transparent = false; //add by gsyan
+boolean transparentColorIsBlack = false; //add by gsyan
+
 //! TODO: scroll bar for big images 
 
 
@@ -102,6 +105,14 @@ void setup() {
   gui.addSlider("maxBrightness").setSize(130, 30).setCaptionLabel("White Point").setPosition(10, 500).setRange(0, 255).setValue(255).setColorCaptionLabel(color(0));
   gui.getController("maxBrightness").getCaptionLabel().align(ControlP5.LEFT, ControlP5.TOP_OUTSIDE);
 
+  //added by gsyan start ---------------------------------------
+  gui.addToggle("enableTransparent").setCaptionLabel("Tranparent").setPosition(10, 560).setValue(false).setMode(ControlP5.SWITCH).setColorCaptionLabel(color(0));
+  gui.getController("enableTransparent").getCaptionLabel().align(ControlP5.LEFT, ControlP5.TOP_OUTSIDE);  
+
+  gui.addToggle("transparentColor").setCaptionLabel("Black/White").setPosition(80, 560).setValue(false).setMode(ControlP5.SWITCH).setColorCaptionLabel(color(0));
+  gui.getController("transparentColor").getCaptionLabel().align(ControlP5.LEFT, ControlP5.TOP_OUTSIDE);  
+  //added by gsyan end ---------------------------------------
+
   // added: .setTriggerEvent(Bang.RELEASE)
   // now you don't have to click 's' to save. save button work fine now. 
   gui.addBang("bangLoad").setSize(130, 30).setTriggerEvent(Bang.RELEASE).setCaptionLabel("Load image").setPosition(10, 600).setColorCaptionLabel(color(255));
@@ -137,7 +148,8 @@ void loadMainImage(String inImageName) {
   if (tempheight < 720 + 120)
     tempheight = 720 + 120;
 
-  surface.setSize(p1.width + 150, tempheight);
+  //surface.setSize(p1.width + 150, tempheight);
+  surface.setSize(p1.width + 150 + 10, tempheight); //modified by gsyan : add 10 points to right
 
   // filter image
   p1.filter(GRAY);
@@ -162,8 +174,15 @@ void draw() {
       // save to file
       // was: beginRecord(SVG, "squiggleImage_" + millis() + ".svg");
       String[] p = splitTokens(imageName, "."); // split by point to know path without suffix
-      // save to dir where is opening file
-      String savePath = p[p.length - 2] + "_" + day() + hour() + minute() +  second() + ".svg";           
+      // save to dir where is opening file     
+      int mm = month();
+      int dd = day();
+      int h = hour();
+      int m = minute();
+      int s = second();
+      
+      //String savePath = p[p.length - 2] + "_" + day() + hour() + minute() +  second() + ".svg";           
+      String savePath = p[p.length - 2] + "_" + year()+"-"+(mm<10 ? "0"+mm : mm)+"-"+(dd<10 ? "0"+dd : dd)+"-"+(h<10 ? "0"+h : h)+(m<10 ? "0"+m : m)+(s<10 ? "0"+s : s) + ".svg"; //moified by gsyan : postfix change to yyyy-mm-dd-hhmmss
       println(savePath);
       beginRecord(SVG, savePath);
     }
@@ -191,6 +210,9 @@ void createPic() {
 
   startx = 0.0;
   starty = 0.0;
+  
+  boolean isBeginShape = false;  //added by gsyan
+
 
   if (!isRecording)
     background(255);
@@ -235,6 +257,7 @@ void createPic() {
   if (connectEnds)
   {    
     beginShape();
+    isBeginShape = true;  //added by gsyan
   }
 
   boolean oddRow = false;
@@ -243,13 +266,9 @@ void createPic() {
   float lastX;
   float scaledYstep = p2.height/ystep;
 
+
   for (int y=0; y<p2.height; y+=scaledYstep) {
-
-    if (!connectEnds)
-    {    
-      beginShape();
-    }
-
+        
     oddRow = !oddRow;
     if (y + (scaledYstep ) >= p2.height)
       finalRow = true;
@@ -260,7 +279,69 @@ void createPic() {
       reverseRow = false;
 
     a = 0.0;
-
+    
+    //-----------------------------------------------------------
+    //added by gsyan
+    //find the bound of x
+    //
+    boolean fistNotTransparentFound = false; 
+    boolean lastNotTransparentFound = false;
+    boolean isFinal = false;
+    int minX = 0;
+    int maxX = p2.width-1;
+    if(transparent) {
+      //find the edge of left 
+      do {
+        b = (int)alpha(p2.get(minX, y));
+        if((!transparentColorIsBlack && b<maxB) || (transparentColorIsBlack && b>minB)) {
+          fistNotTransparentFound = true;
+        } else 
+        {
+          minX += xstep;
+          if (minX + xstep >= p2.width) {
+            isFinal = true;
+            minX = p2.width-1;
+          } else
+          {
+            isFinal = false;        
+          }
+        }
+      } while(!fistNotTransparentFound && !isFinal);
+      
+      //find the edge of right
+      isFinal = false;
+      do {
+        b = (int)alpha(p2.get(maxX, y));
+        if((!transparentColorIsBlack && b<maxB) || (transparentColorIsBlack && b>minB)) {
+          lastNotTransparentFound = true;
+        } else 
+        {
+          maxX -= xstep;
+          if (maxX<minX) {
+            isFinal = true;
+            maxX = minX;
+          } else
+          {
+            isFinal = false;        
+          }
+        }
+      } while(!lastNotTransparentFound && !isFinal);
+    }
+    //print(y + " : " + minX + " , " + maxX + "\n");
+    //-----------------------------------------------------------
+    
+    if(transparent && minX >= maxX) {
+      oddRow = !oddRow;  //skip the line , so reverse oddRow status
+      continue;
+    }
+      
+    if (!connectEnds)
+    {    
+      beginShape();
+      isBeginShape = true; //added by gsyan
+    }
+    
+    
     // Add initial "extra" point to give splines a consistent visual endpoint,
     // IF we are not connecting rows.
 
@@ -269,17 +350,29 @@ void createPic() {
       if (!connectEnds || y == 0)    
       {
         // Always add the extra initial point if we're not connecting the ends, or if this is the first row.
-        curveVertex(xOffset + scaleFactor * (p2.width + 0.1 * xstep), scaleFactor * y);
+        if(!transparent)
+          curveVertex(xOffset + scaleFactor * (p2.width + 0.1 * xstep), scaleFactor * y);
+        //else
+        //  curveVertex(xOffset + scaleFactor * (maxX + 0.1 * xstep), scaleFactor * y);  //added by gsyan
       }
-      curveVertex(xOffset + scaleFactor * (p2.width), scaleFactor * y);
+      if(!transparent)
+        curveVertex(xOffset + scaleFactor * (p2.width), scaleFactor * y);
+      else
+        curveVertex(xOffset + scaleFactor * (maxX), scaleFactor * y);  //added by gsyan
     } else
     {
       if (!connectEnds || y == 0)    
       {
         // Always add the extra initial point if we're not connecting the ends, or if this is the first row.
-        curveVertex(xOffset - scaleFactor * ( 0.1 * xstep), y * scaleFactor);
+        if(!transparent)
+          curveVertex(xOffset - scaleFactor * ( 0.1 * xstep), y * scaleFactor);
+        //else 
+        //  curveVertex(scaleFactor * minX + xOffset - scaleFactor * ( 0.1 * xstep), y * scaleFactor); //added by gsyan          
       }
-      curveVertex(xOffset, y * scaleFactor);
+      if(!transparent) 
+        curveVertex(xOffset, y * scaleFactor);
+      else 
+        curveVertex(xOffset + scaleFactor * minX, y * scaleFactor); //add by gsyan
     }
 
 
@@ -333,43 +426,91 @@ void createPic() {
      
      */
 
+    
     float phase = 0.0;
     float lastPhase = 0; // accumulated phase at previous vertex
     float lastAmpl = 0; // amplitude at previous vertex
     boolean finalStep = false;
-
+    
     int x;
 
     if (reverseRow)
     {
-      x = p2.width;
-      lastX = p2.width;
+      if(!transparent) {
+        x = p2.width;
+        lastX = p2.width;
+      } else
+      {  //added by gsyan
+        x = maxX;
+        lastX = x;
+      }
     } else
     {
-      x = 1;
-      lastX = 1;
+      if(!transparent) {
+        x = 1;
+        lastX = 1;
+      } else
+      {  //added by gsyan
+        x = minX;
+        lastX = x;
+      }
     }
-
 
     while (finalStep == false) { // Iterate over each each x-step in the row
 
       if (reverseRow)
       {    // Moving left to right on even rows
         x -= xstep;
-        if (x - xstep < 1)
-          finalStep = true;
-        else
-          finalStep = false;
+        if(!transparent) {
+          if (x - xstep < 1)
+            finalStep = true;
+          else
+            finalStep = false;
+        } else
+        {  //added by gsyan
+          if (x - xstep < minX)
+            finalStep = true;
+          else
+            finalStep = false;
+        }          
       } else
       { // Moving right to left as usual
         x += xstep;
-        if (x + xstep >= p2.width)
-          finalStep = true;
-        else
-          finalStep = false;
+        if(!transparent) {
+          if (x + xstep >= p2.width)
+            finalStep = true;
+          else
+            finalStep = false;
+        } else 
+        {  //added by syan
+          if (x + xstep >= maxX)
+            finalStep = true;
+          else
+            finalStep = false;
+        }
       }
 
       b = (int)alpha(p2.get(x, y));
+      
+      
+      //added by gsyan -----------------------------------skip transparent color
+      if(transparent) {
+        if((!transparentColorIsBlack && b>=maxB) || (transparentColorIsBlack && b<=minB)) { //transparent color found
+          //stop and find next x
+          endShape();
+          isBeginShape = false;            
+          lastX = x;
+        } else
+        { //continue to draw
+          if(!isBeginShape) {
+            beginShape();
+            isBeginShape = true;
+            //lastX = x;
+          }
+        }
+      }
+      //added by gsyan end -------------------------------------
+        
       b = max(minB, b);
       z = max(maxB-b, 0);        // Brightness trimmed to range.
 
@@ -406,53 +547,67 @@ void createPic() {
       // (Vertices do not fall along the x "grid", but where they need to.)
 
       if (!finalStep)  // Skip to end points if this is the last point in the row.
-        if (deltaPhase > HALF_PI) // Only add vertices if true.
-        {
-          /* 
-           Linearly interpolate phase and amplitude since last vertex added.
-           This treats the frequency as constant
-           between subsequent x-samples of the source image.
-           */
-
-          int vertexCount = floor( deltaPhase / HALF_PI); //  Add this many vertices
-
-          float integerPart = ((vertexCount * HALF_PI) / deltaPhase);
-          // "Integer" fraction (in terms of pi/2 phase segments) of deltaX.
-
-          float deltaX_truncate = deltaX * integerPart;
-          // deltaX_truncate: "Integer" part (in terms of pi/2 segments) of deltaX.
-
-          float xPerVertex =  deltaX_truncate / vertexCount;
-          float amplPerVertex = (integerPart * deltaAmpl) / vertexCount;
-
-          // Add the vertices:
-          for (int i = 0; i < vertexCount; i = i+1) {
-
-            lastX = lastX + xPerVertex;
-            lastPhase = lastPhase + HALF_PI;
-            lastAmpl = lastAmpl + amplPerVertex;
-
-            curveVertex(xOffset + scaleFactor * lastX, scaleFactor *(y+sin(lastPhase)*lastAmpl));
+        if ( !transparent || (transparent && isBeginShape) ) {
+          if (deltaPhase > HALF_PI) // Only add vertices if true.
+          {
+            /* 
+             Linearly interpolate phase and amplitude since last vertex added.
+             This treats the frequency as constant
+             between subsequent x-samples of the source image.
+             */
+  
+            int vertexCount = floor( deltaPhase / HALF_PI); //  Add this many vertices
+  
+            float integerPart = ((vertexCount * HALF_PI) / deltaPhase);
+            // "Integer" fraction (in terms of pi/2 phase segments) of deltaX.
+  
+            float deltaX_truncate = deltaX * integerPart;
+            // deltaX_truncate: "Integer" part (in terms of pi/2 segments) of deltaX.
+  
+            float xPerVertex =  deltaX_truncate / vertexCount;
+            float amplPerVertex = (integerPart * deltaAmpl) / vertexCount;
+  
+            // Add the vertices:
+            for (int i = 0; i < vertexCount; i = i+1) {
+  
+              lastX = lastX + xPerVertex;
+              lastPhase = lastPhase + HALF_PI;
+              lastAmpl = lastAmpl + amplPerVertex;
+  
+              curveVertex(xOffset + scaleFactor * lastX, scaleFactor *(y+sin(lastPhase)*lastAmpl));
+            }
           }
         }
     }
-
+    
     // Add final "extra" point to give splines a consistent visual endpoint:
     if (reverseRow)
     {
-      curveVertex(xOffset, y * scaleFactor);
+      if(!transparent)
+        curveVertex(xOffset, y * scaleFactor);
+      else
+        curveVertex(xOffset + scaleFactor * minX, y * scaleFactor);    //added by gsyan   
       if (!connectEnds || finalRow)    
       {
         // Always add the extra final point if we're not connecting the ends, or if this is the first row.
-        curveVertex(xOffset - scaleFactor * ( 0.1 * xstep), y * scaleFactor);
+        if(!transparent)
+          curveVertex(xOffset - scaleFactor * ( 0.1 * xstep), y * scaleFactor);
+        //else
+        //  curveVertex(xOffset + scaleFactor * (minX - ( 0.1 * xstep) ), y * scaleFactor); //added by gsyan
       }
     } else
     {
-      curveVertex(xOffset + scaleFactor * (p2.width), scaleFactor * y);
+      if(!transparent)
+        curveVertex(xOffset + scaleFactor * (p2.width), scaleFactor * y);
+      else
+        curveVertex(xOffset + scaleFactor * maxX, scaleFactor * y); //added by gsyan
       if (!connectEnds || finalRow)    
       {
         // Always add the extra final point if we're not connecting the ends, or if this is the first row.
-        curveVertex(xOffset + scaleFactor * (p2.width + 0.1 * xstep), scaleFactor * y);
+        if(!transparent)
+          curveVertex(xOffset + scaleFactor * (p2.width + 0.1 * xstep), scaleFactor * y);
+        //else
+        //  curveVertex(xOffset + scaleFactor * (maxX + 0.1 * xstep), scaleFactor * y);   //added by gsyan
       }
     }
 
@@ -460,22 +615,32 @@ void createPic() {
     if (connectEnds && !finalRow)  // Add curvy end connectors
       if (reverseRow)
       {
-        curveVertex(xOffset - scaleFactor * ( 0.1 * xstep + scaledYstep/3), (y + scaledYstep/2) * scaleFactor );
+        if(!transparent)
+          curveVertex(xOffset - scaleFactor * ( 0.1 * xstep + scaledYstep/3), (y + scaledYstep/2) * scaleFactor );
+        //else
+        //  curveVertex(xOffset + scaleFactor * ( minX -  ( 0.1 * xstep + scaledYstep/3) ), (y + scaledYstep/2) * scaleFactor );  //added by gsyan
       } else
       {
-        curveVertex(xOffset + scaleFactor * (p2.width + 0.1 * xstep + scaledYstep/3), (y + scaledYstep/2) * scaleFactor );
+        if(!transparent) 
+          curveVertex(xOffset + scaleFactor * (p2.width + 0.1 * xstep + scaledYstep/3), (y + scaledYstep/2) * scaleFactor );
+        //else 
+        //  curveVertex(xOffset + scaleFactor * (maxX + 0.1 * xstep + scaledYstep/3), (y + scaledYstep/2) * scaleFactor );  //added by gsyan
       }
-
-
+    
     if (!connectEnds)
-    {    
+    {
       endShape();
+      
+      if(transparent) //added by gsyan
+        isBeginShape = false;
     }
   }
 
   if (connectEnds)
-  {    
+  {   
     endShape();
+    if(transparent)  //added by gsyan
+      isBeginShape = false;
   }
 }
 
@@ -577,6 +742,23 @@ void minBrightness(int value) {
   redrawImage();
 }
 
+//add by gsyan
+void enableTransparent(boolean value) {
+  transparent = value;
+  needsReload = true;
+  redrawImage();
+}
+//add by gsyan
+void transparentColor(boolean value) {
+  transparentColorIsBlack = value;
+  if(transparent) {
+    needsReload = true;
+    redrawImage();
+  } else {
+    needsReload = false;
+  }
+}
+
 void bangSave() {
   isRecording = true;
   isRunning = true;
@@ -621,6 +803,8 @@ void bangDefault() {
   gui.getController("lineWidth").setValue(5);
   gui.getController("minBrightness").setValue(0);
   gui.getController("maxBrightness").setValue(255);
+  gui.getController("enableTransparent").setValue(0);  //add by gsyan
+  gui.getController("transparentColor").setValue(0);  //add by gsyan
 }
 
 //void bangFit() {    
